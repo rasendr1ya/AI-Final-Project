@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Similarity Detector</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/aistyle.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-user-friends"></i> Face Similarity Detector</h1>
+            <p>Upload two face images to check their similarity using AI</p>
+        </header>
+
+        <main>
+            <!-- Model Selection Section -->
+            <div class="model-selection">
+                <h3><i class="fas fa-cogs"></i> AI Model Configuration</h3>
+                <div class="config-row">
+                    <div class="config-item">
+                        <label for="model-select">Face Recognition Model:</label>
+                        <select id="model-select" class="config-select">
+                            <option value="VGG-Face">VGG-Face (Balanced)</option>
+                            <option value="Facenet">Facenet (Google - High Accuracy)</option>
+                            <option value="Facenet512">Facenet512 (Highest Accuracy)</option>
+                            <option value="ArcFace">ArcFace (State-of-the-art)</option>
+                            <option value="DeepFace">DeepFace (Facebook)</option>
+                            <option value="OpenFace">OpenFace (Fast)</option>
+                            <option value="DeepID">DeepID (CUHK)</option>
+                            <option value="SFace">SFace (OpenCV)</option>
+                            <option value="Dlib">Dlib (Traditional)</option>
+                        </select>
+                        <p class="model-description" id="model-description">Oxford VGG model, balanced accuracy and speed</p>
+                    </div>
+                    <div class="config-item">
+                        <label for="metric-select">Distance Metric:</label>
+                        <select id="metric-select" class="config-select">
+                            <option value="cosine">Cosine (Most Common)</option>
+                            <option value="euclidean">Euclidean (Geometric)</option>
+                            <option value="euclidean_l2">Euclidean L2 (Normalized)</option>
+                        </select>
+                        <p class="metric-description" id="metric-description">Cosine similarity (most common)</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="upload-section">
+                <div class="image-upload">
+                    <h3><i class="fas fa-image"></i> Image 1</h3>
+                    <div class="upload-area" id="upload1">
+                        <input type="file" id="file1" accept="image/*" style="display: none;">
+                        <div class="upload-placeholder">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Click to upload first image</p>
+                        </div>
+                        <img id="preview1" style="display: none;">
+                    </div>
+                    <button id="load-btn1" class="btn btn-primary">
+                        <i class="fas fa-upload"></i> Load Image 1
+                    </button>
+                </div>
+
+                <div class="vs-divider">
+                    <div class="vs-circle">VS</div>
+                </div>
+
+                <div class="image-upload">
+                    <h3><i class="fas fa-image"></i> Image 2</h3>
+                    <div class="upload-area" id="upload2">
+                        <input type="file" id="file2" accept="image/*" style="display: none;">
+                        <div class="upload-placeholder">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Click to upload second image</p>
+                        </div>
+                        <img id="preview2" style="display: none;">
+                    </div>
+                    <button id="load-btn2" class="btn btn-primary">
+                        <i class="fas fa-upload"></i> Load Image 2
+                    </button>
+                </div>
+            </div>
+
+            <div class="action-section">
+                <button id="predict-btn" class="btn btn-success" disabled>
+                    <i class="fas fa-brain"></i> Predict Similarity
+                </button>
+                <button id="clear-btn" class="btn btn-secondary">
+                    <i class="fas fa-trash"></i> Clear All
+                </button>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Analyzing faces...</p>
+            </div>
+
+            <div id="result" class="result-section" style="display: none;">
+                <h3><i class="fas fa-chart-line"></i> Similarity Result</h3>
+                <div class="result-card">
+                    <div class="similarity-score">
+                        <span id="similarity-percentage">0%</span>
+                        <div class="progress-bar">
+                            <div id="progress-fill" class="progress-fill"></div>
+                        </div>
+                        <div class="similarity-status" id="similarity-status">
+                            <i class="fas fa-question-circle"></i>
+                            <span>Analyzing...</span>
+                        </div>
+                    </div>
+                    <div class="result-details">
+                        <div class="detail-item">
+                            <strong>Verified:</strong> <span id="verified-status">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Distance:</strong> <span id="distance-value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Threshold:</strong> <span id="threshold-value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Model Used:</strong> <span id="model-name">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Distance Metric:</strong> <span id="distance-metric">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Processing Time:</strong> <span id="processing-time">-</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Detailed Explanation -->
+                <div class="explanation-section">
+                    <h4><i class="fas fa-info-circle"></i> Understanding the Results</h4>
+                    <div class="explanation-grid">
+                        <div class="explanation-item">
+                            <strong>Distance Meaning:</strong>
+                            <p id="distance-meaning">-</p>
+                        </div>
+                        <div class="explanation-item">
+                            <strong>Threshold Meaning:</strong>
+                            <p id="threshold-meaning">-</p>
+                        </div>
+                        <div class="explanation-item">
+                            <strong>Verification Result:</strong>
+                            <p id="verification-meaning">-</p>
+                        </div>
+                        <div class="explanation-item">
+                            <strong>Similarity Score:</strong>
+                            <p id="similarity-meaning">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="error" class="error-message" style="display: none;"></div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/aiscript.js') }}"></script>
+</body>
+</html>
