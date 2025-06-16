@@ -135,10 +135,22 @@ def upload_file():
 def predict_similarity():
     try:
         data = request.get_json()
+        
+        # Tambahkan logging untuk debug
+        print("=== DEBUG PREDICTION REQUEST ===")
+        print(f"Full request data: {data}")
+        
         image1_path = data.get('image1_path')
         image2_path = data.get('image2_path')
         model_name = data.get('model_name', 'VGG-Face')  # Default to VGG-Face
         distance_metric = data.get('distance_metric', 'cosine')  # Default to cosine
+        
+        # Logging untuk melihat nilai yang diterima
+        print(f"Image1 path: {image1_path}")
+        print(f"Image2 path: {image2_path}")
+        print(f"Selected model: {model_name}")
+        print(f"Selected metric: {distance_metric}")
+        print("================================")
         
         if not image1_path or not image2_path:
             return jsonify({'error': 'Both images are required'}), 400
@@ -210,6 +222,163 @@ def clear_uploads():
             if os.path.isfile(file_path):
                 os.unlink(file_path)
         return jsonify({'success': True, 'message': 'All files cleared'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/realtime')
+def realtime():
+    """Render real-time monitoring page"""
+    return render_template('realtime.html')
+
+@app.route('/analyze_frame', methods=['POST'])
+def analyze_frame():
+    """Analyze single frame for face attributes"""
+    try:
+        data = request.get_json()
+        image_data = data.get('image')
+        
+        if not image_data:
+            return jsonify({'error': 'No image data received'}), 400
+        
+        # Decode base64 image
+        image_data = image_data.split(',')[1]  # Remove data:image/jpeg;base64,
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # Convert to numpy array
+        image_np = np.array(image)
+        
+        # Debug: Print image dimensions
+        print(f"Image dimensions: {image_np.shape}")
+        
+        # Save temporary file for DeepFace processing
+        temp_path = os.path.join(UPLOAD_FOLDER, 'temp_frame.jpg')
+        cv2.imwrite(temp_path, cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))
+        
+        print(f"Saved temp file: {temp_path}")
+        
+        # Try multiple detector backends for better face detection
+        detector_backends = ['opencv', 'ssd', 'dlib', 'mtcnn', 'retinaface']
+        analysis = None
+        used_detector = None
+        
+        for detector in detector_backends:
+            try:
+                print(f"Trying detector: {detector}")
+                analysis = DeepFace.analyze(
+                    img_path=temp_path,
+                    actions=['age', 'gender', 'emotion', 'race'],
+                    detector_backend=detector,
+                    enforce_detection=False
+                )
+                used_detector = detector
+                print(f"Success with detector: {detector}")
+                break
+            except Exception as detector_error:
+                print(f"Detector {detector} failed: {str(detector_error)}")
+                continue
+        
+        if analysis is None:
+            # If all detectors fail, try with enforce_detection=False and opencv
+            try:
+                analysis = DeepFace.analyze(
+                    img_path=temp_path,
+                    actions=['age', 'gender', 'emotion', 'race'],
+                    detector_backend='opencv',
+                    enforce_detection=False
+                )
+                used_detector = 'opencv'
+            except Exception as final_error:
+                print(f"Final detection attempt failed: {str(final_error)}")
+                raise final_error
+        
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        # Handle both single face and multiple faces
+        if not isinstance(analysis, list):
+            analysis = [analysis]
+        
+        # Process each detected face
+        faces_data = []
+        for i, face_analysis in enumerate(analysis):
+            # Get face region information
+            face_region = face_analysis.get('region', {})
+            
+            face_data = {
+                'face_id': i + 1,
+                'age': face_analysis.get('age', 'Unknown'),
+                'gender': face_analysis.get('dominant_gender', 'Unknown'),
+                'emotion': face_analysis.get('dominant_emotion', 'Unknown'),
+                'race': face_analysis.get('dominant_race', 'Unknown'),
+                'emotion_scores': face_analysis.get('emotion', {}),
+                'race_scores': face_analysis.get('race', {}),
+                'gender_scores': face_analysis.get('gender', {}),
+                'region': {
+                    'x': face_region.get('x', 0),
+                    'y': face_region.get('y', 0),
+                    'w': face_region.get('w', 0),
+                    'h': face_region.get('h', 0)
+                }
+            }
+            faces_data.append(face_data)
+        
+        result = {
+            'success': True,
+            'faces_detected': len(faces_data),
+            'faces': faces_data,
+            'face_detected': len(faces_data) > 0
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "Face could not be detected" in error_msg:
+            return jsonify({
+                'success': False,
+                'face_detected': False,
+                'error': 'No face detected in frame'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Analysis error: {error_msg}'
+            }), 500
+
+@app.route('/test_detection', methods=['GET'])
+def test_detection():
+    """Test face detection with a sample image"""
+    try:
+        # Try to detect faces in uploaded images for debugging
+        upload_files = [f for f in os.listdir(UPLOAD_FOLDER) if f.endswith(('.jpg', '.jpeg', '.png'))]
+        
+        if not upload_files:
+            return jsonify({'error': 'No test images found in uploads folder'})
+        
+        test_file = os.path.join(UPLOAD_FOLDER, upload_files[0])
+        
+        detector_backends = ['opencv', 'ssd', 'dlib', 'mtcnn', 'retinaface']
+        results = {}
+        
+        for detector in detector_backends:
+            try:
+                analysis = DeepFace.analyze(
+                    img_path=test_file,
+                    actions=['age', 'gender', 'emotion'],
+                    detector_backend=detector,
+                    enforce_detection=False
+                )
+                results[detector] = 'SUCCESS'
+            except Exception as e:
+                results[detector] = f'FAILED: {str(e)}'
+        
+        return jsonify({
+            'test_file': test_file,
+            'detector_results': results
+        })
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
