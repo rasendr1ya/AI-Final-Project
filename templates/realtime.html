@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Face Analysis</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .main-content {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .video-section {
+            position: relative;
+            display: inline-block;
+        }
+        video {
+            width: 640px;
+            height: 480px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            background-color: #000;
+        }
+        .overlay {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 640px;
+            height: 480px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .face-box {
+            position: absolute;
+            border: 3px solid #00ff00;
+            border-radius: 5px;
+            background: rgba(0, 255, 0, 0.1);
+        }
+        .face-label {
+            position: absolute;
+            background: rgba(0, 255, 0, 0.8);
+            color: white;
+            padding: 2px 6px;
+            font-size: 12px;
+            border-radius: 3px;
+            top: -25px;
+            left: 0;
+            white-space: nowrap;
+        }
+        .results {
+            flex: 1;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .face-result {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .face-header {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #007bff;
+        }
+        .attribute {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .attribute strong {
+            color: #333;
+        }
+        .scores {
+            font-size: 0.85em;
+            margin-top: 5px;
+            color: #666;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .status {
+            text-align: center;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #d4edda;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Real-time Face Analysis</h1>
+        
+        <div class="controls">
+            <button id="startBtn">📹 Start Camera</button>
+            <button id="stopBtn" disabled>⏹️ Stop Camera</button>
+            <button id="testBtn" disabled>🧪 Test Analysis</button>
+            <button onclick="window.location.href='/'">🔙 Back to Similarity Check</button>
+        </div>
+        
+        <div class="main-content">
+            <div class="video-section">
+                <video id="video" autoplay muted playsinline></video>
+                <div id="overlay" class="overlay"></div>
+            </div>
+            
+            <div class="results" id="results">
+                <div class="status" id="status">Click "Start Camera" to begin analysis</div>
+                <div id="stats" class="stats" style="display: none;">
+                    <span>Faces Detected: <strong id="face-count">0</strong></span>
+                    <span>Last Update: <strong id="last-update">-</strong></span>
+                </div>
+                <div id="faces-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let video = document.getElementById('video');
+        let overlay = document.getElementById('overlay');
+        let startBtn = document.getElementById('startBtn');
+        let stopBtn = document.getElementById('stopBtn');
+        let testBtn = document.getElementById('testBtn');
+        let stream = null;
+        let analysisInterval = null;
+
+        startBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopCamera);
+        testBtn.addEventListener('click', testAnalysis);
+
+        async function startCamera() {
+            try {
+                // Request camera with specific constraints for better performance
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640, min: 480 },
+                        height: { ideal: 480, min: 360 },
+                        facingMode: 'user',
+                        frameRate: { ideal: 30, max: 60 }
+                    } 
+                });
+                video.srcObject = stream;
+                
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                testBtn.disabled = false;
+                
+                document.getElementById('status').textContent = '📹 Camera started. Analyzing faces...';
+                document.getElementById('stats').style.display = 'flex';
+                
+                // Wait for video to load before starting analysis
+                video.addEventListener('loadedmetadata', () => {
+                    console.log('Video loaded, starting analysis...');
+                    // Start analysis every 4 seconds for better performance
+                    analysisInterval = setInterval(analyzeFrame, 4000);
+                    
+                    // Do initial analysis after 2 seconds
+                    setTimeout(analyzeFrame, 2000);
+                });
+                
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                document.getElementById('status').textContent = '❌ Error accessing camera: ' + err.message;
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            
+            if (analysisInterval) {
+                clearInterval(analysisInterval);
+            }
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            testBtn.disabled = true;
+            
+            document.getElementById('status').textContent = '⏹️ Camera stopped';
+            document.getElementById('stats').style.display = 'none';
+            clearOverlay();
+            clearResults();
+        }
+
+        function analyzeFrame() {
+            if (!video.videoWidth || !video.videoHeight) {
+                console.log('Video not ready yet');
+                return;
+            }
+            
+            console.log('Starting frame analysis...');
+            
+            // Capture frame from video with higher quality
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            
+            // Draw image normally (no flip for better face detection)
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to higher quality JPEG
+            const imageData = canvas.toDataURL('image/jpeg', 0.95);
+            
+            console.log('Frame captured, sending to server...');
+            console.log('Image data length:', imageData.length);
+            
+            // Send to server for analysis
+            fetch('/analyze_frame', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: imageData })
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Analysis response:', data);
+                if (data.success && data.face_detected) {
+                    document.getElementById('status').textContent = `✅ Analyzing ${data.faces_detected} face${data.faces_detected > 1 ? 's' : ''}`;
+                    displayResults(data);
+                    drawFaceBoxes(data.faces);
+                } else {
+                    document.getElementById('status').textContent = '👤 No faces detected';
+                    clearOverlay();
+                    clearResults();
+                }
+                updateStats(data);
+            })
+            .catch(error => {
+                console.error('Analysis error:', error);
+                document.getElementById('status').textContent = '❌ Analysis error: ' + error.message;
+                clearOverlay();
+            });
+        }
+
+        function drawFaceBoxes(faces) {
+            clearOverlay();
+            
+            if (!faces || faces.length === 0) return;
+            
+            // Get video display dimensions
+            const videoRect = video.getBoundingClientRect();
+            const scaleX = 640 / video.videoWidth;
+            const scaleY = 480 / video.videoHeight;
+            
+            faces.forEach((face, index) => {
+                const region = face.region;
+                if (region.w > 0 && region.h > 0) {
+                    // Create face box
+                    const faceBox = document.createElement('div');
+                    faceBox.className = 'face-box';
+                    faceBox.style.left = (region.x * scaleX) + 'px';
+                    faceBox.style.top = (region.y * scaleY) + 'px';
+                    faceBox.style.width = (region.w * scaleX) + 'px';
+                    faceBox.style.height = (region.h * scaleY) + 'px';
+                    
+                    // Create label
+                    const label = document.createElement('div');
+                    label.className = 'face-label';
+                    label.textContent = `Face ${face.face_id}: ${face.emotion} (${face.age}y, ${face.gender})`;
+                    faceBox.appendChild(label);
+                    
+                    overlay.appendChild(faceBox);
+                }
+            });
+        }
+
+        function displayResults(data) {
+            const container = document.getElementById('faces-container');
+            container.innerHTML = '';
+            
+            if (data.faces && data.faces.length > 0) {
+                data.faces.forEach(face => {
+                    const faceDiv = document.createElement('div');
+                    faceDiv.className = 'face-result';
+                    
+                    const emotionScores = Object.entries(face.emotion_scores || {})
+                        .sort(([,a], [,b]) => b - a)
+                        .slice(0, 3)
+                        .map(([emotion, score]) => `${emotion}: ${score.toFixed(1)}%`)
+                        .join(', ');
+                    
+                    const raceScores = Object.entries(face.race_scores || {})
+                        .sort(([,a], [,b]) => b - a)
+                        .slice(0, 3)
+                        .map(([race, score]) => `${race}: ${score.toFixed(1)}%`)
+                        .join(', ');
+                        
+                    const genderScores = Object.entries(face.gender_scores || {})
+                        .map(([gender, score]) => `${gender}: ${score.toFixed(1)}%`)
+                        .join(', ');
+                    
+                    faceDiv.innerHTML = `
+                        <div class="face-header">👤 Face ${face.face_id}</div>
+                        
+                        <div class="attribute">
+                            <strong>👶 Age:</strong> ${face.age} years old
+                        </div>
+                        
+                        <div class="attribute">
+                            <strong>👫 Gender:</strong> ${face.gender}
+                            <div class="scores">Confidence: ${genderScores}</div>
+                        </div>
+                        
+                        <div class="attribute">
+                            <strong>😊 Emotion:</strong> ${face.emotion}
+                            <div class="scores">Top emotions: ${emotionScores}</div>
+                        </div>
+                        
+                        <div class="attribute">
+                            <strong>🌍 Ethnicity:</strong> ${face.race}
+                            <div class="scores">Top predictions: ${raceScores}</div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(faceDiv);
+                });
+            }
+        }
+
+        function updateStats(data) {
+            const faceCount = data.faces_detected || 0;
+            const now = new Date().toLocaleTimeString();
+            
+            document.getElementById('face-count').textContent = faceCount;
+            document.getElementById('last-update').textContent = now;
+            
+            if (faceCount > 0) {
+                document.getElementById('status').textContent = `✅ Analyzing ${faceCount} face${faceCount > 1 ? 's' : ''}`;
+            }
+        }
+
+        function clearOverlay() {
+            overlay.innerHTML = '';
+        }
+
+        function clearResults() {
+            document.getElementById('faces-container').innerHTML = '';
+            document.getElementById('face-count').textContent = '0';
+        }
+
+        // Handle video load to ensure proper dimensions
+        video.addEventListener('loadedmetadata', function() {
+            console.log('Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+        });
+
+        function testAnalysis() {
+            console.log('Manual test analysis triggered');
+            analyzeFrame();
+        }
+    </script>
+</body>
+</html>
