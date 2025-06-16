@@ -32,6 +32,7 @@ async function loadModelsData() {
     try {
         const response = await fetch('/models');
         modelsData = await response.json();
+        console.log('Models loaded:', modelsData); // debug cek models data
     } catch (error) {
         console.error('Failed to load models data:', error);
     }
